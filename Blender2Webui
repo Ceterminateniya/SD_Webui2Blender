@@ -1,0 +1,166 @@
+from bpy.app.handlers import persistent
+import bpy
+import os
+import shutil
+import time
+import tempfile
+import base64
+import requests
+from random import uniform
+
+IMAGE_FOLDER = "path/to/image/folder"
+
+DEFAULT_PARAMS = {
+    "prompt": "1 girl dancing on the beach, ocean background, sunset glow, best quality",
+    "negative_prompt": "worst quality, low quality, lowres, normal quality",
+    "width": 512,
+    "height": 512,
+    "seed": -1,
+    "subseed": -1,
+    "subseed_strength": 0,
+    "batch_size": 1,
+    "n_iter": 1,
+    "steps": 30,
+    "cfg_scale": 7,
+    "restore_faces": False,
+    "sampler_index": "DPM++ 2M Karras",
+    "controlnet_module": "canny",
+    "controlnet_model": "diff_control_sd15_depth_fp16 [978ef0a1]",
+    "controlnet_guidance": 1.0,
+    "enable_hr": False,
+    "denoising_strength": 0.6,
+    "hr_scale": 2,
+    "hr_upscale": "Latent (bicubic antialiased)",
+}
+
+DEFAULT_PARAMS = {
+
+    "init_images": [],
+    "mask": "string",
+    "mask_blur": 30,
+    "inpainting_fill": 0,
+    "inpaint_full_res": True,
+    "inpaint_full_res_padding": 1,
+    "inpainting_mask_invert": 1,
+    "resize_mode": 0,
+    "denoising_strength": 0.7,
+    "prompt": "masterpiece,best quality,with blue and white design on it,smooth line sneakers,with detailed,colorful,cartoon,octane render,artgerm,artstation,lightning,fill,star,2d texture,((symmetrical)),fabric,clear edge,not complicated pattern,fill in the blanks,successive",
+    "negative_prompt": "",
+    "controlnet_input_image": [],
+    "controlnet_mask": [],
+    "controlnet_module": "",
+    "controlnet_model": "",
+    "controlnet_weight": 1,
+    "controlnet_resize_mode": "Scale to Fit (Inner Fit)",
+    "controlnet_lowvram": True,
+    "controlnet_processor_res": 512,
+    "controlnet_threshold_a": 64,
+    "controlnet_threshold_b": 64,
+    "controlnet_guidance": 1,
+    "guess_mode": True,
+    "seed": -1,
+    "subseed": -1,
+    "subseed_strength": -1,
+    "sampler_index": "",
+    "batch_size": 1,
+    "n_iter": 1,
+    "steps": 20,
+    "cfg_scale": 7,
+    "width": 512,
+    "height": 512,
+    "restore_faces": False,
+    "include_init_images": True,
+    "override_settings": {},
+    "override_settings_restore_afterwards": True
+}
+
+
+def Create_texture():
+    # Get the active object
+    obj = bpy.context.active_object
+
+    # Create new material if needed
+    if not obj.active_material:
+        mat = bpy.data.materials.new(name='New Material')
+        mat.use_nodes = True
+        obj.active_material = mat
+    else:
+        mat = obj.active_material
+
+    # Create RGB color node and Generate random color
+    # if not mat.node_tree.nodes.
+    purecolor_node = mat.node_tree.nodes.new(type='ShaderNodeRGB')
+    purecolor_node.location = (-400, 0)
+    color = (uniform(0, 1), uniform(0, 1), uniform(0, 1), 1.0)
+    purecolor_node.outputs[0].default_value = color
+
+    # Create image texture node
+    # if not mat.node_tree.nodes.
+    image_node = mat.node_tree.nodes.new(type='ShaderNodeTexImage')
+    image_node.label = 'ReferenceTexture'
+    image_node_1 = mat.node_tree.nodes.new(type='ShaderNodeTexImage')
+    image_node.location = (-200, 0)
+    image_node.image = bpy.data.images.new(name='Baked Texture', width=1024, height=1024, alpha=False,
+                                           float_buffer=False, stereo3d=False, is_data=False, tiled=False)
+
+    complete_mat = mat
+
+    return complete_mat
+
+
+def Bake_texture(mat):
+    # Connect nodes
+    purecolor_node = mat.node_tree.nodes(type='ShaderNodeRGB')
+    image_node = mat.node_tree.nodes(lable='Image01')
+    color_output = purecolor_node.outputs[0]
+    emit_color_input = mat.node_tree.nodes.get(
+        "Principled BSDF").inputs.get("Base Color")
+    #emit_color_input = mat.node_tree.nodes.get("Material Output").inputs.get("Surface")
+    mat.node_tree.links.new(color_output, emit_color_input)
+
+    # Set up bake settings
+    bpy.context.scene.render.engine = 'CYCLES'
+    bpy.context.scene.cycles.feature_set = 'EXPERIMENTAL'
+    bpy.context.scene.cycles.bake_type = 'DIFFUSE'
+    bpy.context.scene.render.bake.use_pass_direct = False
+    bpy.context.scene.render.bake.use_pass_indirect = False
+    #image_path = os.path.join(os.path.dirname(bpy.data.filepath), 'baked_texture.png')
+
+    # bpy.data.scenes["Scene"].render.engine='CYCLES'
+    # bpy.data.scenes["Scene"].cycles.feature_set = 'EXPERIMENTAL'
+    # bpy.data.scenes["Scene"].cycles.bake_type = 'EMIT'
+
+    # Bake texture
+    bpy.ops.object.bake(type='DIFFUSE')
+
+    # Save texture
+    # image_node.image.save_render(image_path)
+
+    # # Return the path to the baked texture
+    # return image_path
+
+
+CompleteMat = Create_texture()
+Bake_texture(CompleteMat)
+
+Header = {
+    "accept": "application/json"
+}
+
+
+def send_to_Webui_api(params, filename_prefix):
+    # send API request to the server
+    try:
+        response = requests.get('http://127.0.0.1:7860/user/', headers=Header)
+    except requests.exceptions.ConnectionError:
+        return print(f"The Automatic1111 server couldn't be found.")
+    except requests.exceptions.MissingSchema:
+        return print(f"The url for your Automatic1111 server is invalid.")
+    except requests.exceptions.ReadTimeout:
+        return print("The Automatic1111 server timed out.")
+
+# handle the response
+    if response.status_code == 200:
+        return handle_api_success(response, filename_prefix)
+    else:
+        return handle_api_error(response)
