@@ -1,1 +1,1 @@
-# SDWebui2Blender
+# Stable_Diffusion_Webui2Blender
