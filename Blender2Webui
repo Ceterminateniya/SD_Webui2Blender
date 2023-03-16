@@ -5,66 +5,49 @@ import shutil
 import time
 import tempfile
 import base64
+from base64 import b64encode
 import requests
+import json
+import cv2
+import numpy as np
 from random import uniform
 
-IMAGE_FOLDER = "path/to/image/folder"
+IMAGE_FOLDER = "path/to/image/folder"#F:\\Output
 
-DEFAULT_PARAMS = {
-    "prompt": "1 girl dancing on the beach, ocean background, sunset glow, best quality",
-    "negative_prompt": "worst quality, low quality, lowres, normal quality",
-    "width": 512,
-    "height": 512,
-    "seed": -1,
-    "subseed": -1,
-    "subseed_strength": 0,
-    "batch_size": 1,
-    "n_iter": 1,
-    "steps": 30,
-    "cfg_scale": 7,
-    "restore_faces": False,
-    "sampler_index": "DPM++ 2M Karras",
-    "controlnet_module": "canny",
-    "controlnet_model": "diff_control_sd15_depth_fp16 [978ef0a1]",
-    "controlnet_guidance": 1.0,
-    "enable_hr": False,
-    "denoising_strength": 0.6,
-    "hr_scale": 2,
-    "hr_upscale": "Latent (bicubic antialiased)",
-}
+#Alternative parameter
+#"mask": "string",
+#"mask_blur": 30,
+# "inpainting_fill": 0,
+# "inpaint_full_res": True,
+# "inpaint_full_res_padding": 1,
+# "inpainting_mask_invert": 1,
+#"controlnet_mask": [],
 
 DEFAULT_PARAMS = {
 
     "init_images": [],
-    "mask": "string",
-    "mask_blur": 30,
-    "inpainting_fill": 0,
-    "inpaint_full_res": True,
-    "inpaint_full_res_padding": 1,
-    "inpainting_mask_invert": 1,
     "resize_mode": 0,
     "denoising_strength": 0.7,
     "prompt": "masterpiece,best quality,with blue and white design on it,smooth line sneakers,with detailed,colorful,cartoon,octane render,artgerm,artstation,lightning,fill,star,2d texture,((symmetrical)),fabric,clear edge,not complicated pattern,fill in the blanks,successive",
-    "negative_prompt": "",
+    "negative_prompt": "worst quality, low quality, lowres, normal quality",
     "controlnet_input_image": [],
-    "controlnet_mask": [],
-    "controlnet_module": "",
-    "controlnet_model": "",
+    "controlnet_module": "canny",
+    "controlnet_model": "diff_control_sd15_canny_fp16 [ea6e3b9c]",
     "controlnet_weight": 1,
     "controlnet_resize_mode": "Scale to Fit (Inner Fit)",
     "controlnet_lowvram": True,
     "controlnet_processor_res": 512,
     "controlnet_threshold_a": 64,
     "controlnet_threshold_b": 64,
-    "controlnet_guidance": 1,
+    "controlnet_guidance": 1.0,
     "guess_mode": True,
     "seed": -1,
     "subseed": -1,
     "subseed_strength": -1,
-    "sampler_index": "",
-    "batch_size": 1,
+    "sampler_index": "Euler a",
+    "batch_size": 3,
     "n_iter": 1,
-    "steps": 20,
+    "steps": 25,
     "cfg_scale": 7,
     "width": 512,
     "height": 512,
@@ -73,12 +56,12 @@ DEFAULT_PARAMS = {
     "override_settings": {},
     "override_settings_restore_afterwards": True
 }
+    
 
-
-def Create_texture():
+def create_texture():
     # Get the active object
     obj = bpy.context.active_object
-
+    
     # Create new material if needed
     if not obj.active_material:
         mat = bpy.data.materials.new(name='New Material')
@@ -88,33 +71,44 @@ def Create_texture():
         mat = obj.active_material
 
     # Create RGB color node and Generate random color
-    # if not mat.node_tree.nodes.
-    purecolor_node = mat.node_tree.nodes.new(type='ShaderNodeRGB')
-    purecolor_node.location = (-400, 0)
-    color = (uniform(0, 1), uniform(0, 1), uniform(0, 1), 1.0)
-    purecolor_node.outputs[0].default_value = color
-
+    found_color=any(node.type=='RGB' for node in mat.node_tree.nodes)
+    if not found_color:
+        purecolor_node = mat.node_tree.nodes.new(type='ShaderNodeRGB')
+        purecolor_node.location = (-400, 0)
+        color = (uniform(0, 1), uniform(0, 1), uniform(0, 1), 1.0)
+        purecolor_node.outputs[0].default_value = color
+    else:
+        print("An RGB Node already exists in the material.")
+    
     # Create image texture node
-    # if not mat.node_tree.nodes.
-    image_node = mat.node_tree.nodes.new(type='ShaderNodeTexImage')
-    image_node.label = 'ReferenceTexture'
-    image_node_1 = mat.node_tree.nodes.new(type='ShaderNodeTexImage')
-    image_node.location = (-200, 0)
-    image_node.image = bpy.data.images.new(name='Baked Texture', width=1024, height=1024, alpha=False,
-                                           float_buffer=False, stereo3d=False, is_data=False, tiled=False)
+    target_label='ReferenceTexture'
+    found_image_texture=next((node for node in mat.node_tree.nodes if node.type=='TEX_IMAGE'and node.label==target_label),None)
+    #found_image_texture=any(node.type=='TEX_IMAGE'and node.label==target_label for node in mat.node_tree.nodes)
+    if not found_image_texture:
+        image_node = mat.node_tree.nodes.new(type='ShaderNodeTexImage')
+        image_node.label = 'ReferenceTexture'
+        image_node.location = (-200, 0)
+        image_node.image = bpy.data.images.new(name='Baked Texture', width=1024, 
+                                            height=1024, alpha=False,
+                                            float_buffer=False, stereo3d=False, 
+                                            is_data=False, tiled=False)
+    else:
+        print("An Image Texture Node already exists in the material.")
+        if not found_image_texture.image:
+            found_image_texture.image = bpy.data.images.new(name='Baked Texture', width=1024, 
+                                            height=1024, alpha=False,
+                                            float_buffer=False, stereo3d=False, 
+                                            is_data=False, tiled=False)
+            print("A new image has been created and assigned to the existing Image Texture node.")
+    
+    return mat
 
-    complete_mat = mat
-
-    return complete_mat
-
-
-def Bake_texture(mat):
+def bake_texture(mat):
     # Connect nodes
-    purecolor_node = mat.node_tree.nodes(type='ShaderNodeRGB')
-    image_node = mat.node_tree.nodes(lable='Image01')
+    purecolor_node = mat.node_tree.nodes['RGB']#(type=='ShaderNodeRGB')为啥找不到
+    #image_node = mat.node_tree.nodes(lable='Image01')
     color_output = purecolor_node.outputs[0]
-    emit_color_input = mat.node_tree.nodes.get(
-        "Principled BSDF").inputs.get("Base Color")
+    emit_color_input = mat.node_tree.nodes.get("Principled BSDF").inputs.get("Base Color")
     #emit_color_input = mat.node_tree.nodes.get("Material Output").inputs.get("Surface")
     mat.node_tree.links.new(color_output, emit_color_input)
 
@@ -132,26 +126,125 @@ def Bake_texture(mat):
 
     # Bake texture
     bpy.ops.object.bake(type='DIFFUSE')
-
+    
     # Save texture
     # image_node.image.save_render(image_path)
 
     # # Return the path to the baked texture
     # return image_path
 
+def read_image(mat):
+    
+    # Define the target label
+    target_label = 'ReferenceTexture'
 
-CompleteMat = Create_texture()
-Bake_texture(CompleteMat)
+    # Find the Image Texture node with the target label using a generator expression and next()
+    found_node = next((node for node in mat.node_tree.nodes if node.type == 'TEX_IMAGE' and node.label == target_label), None)
+    
+    if found_node:
+        print(f"Found an Image Texture node with the label '{target_label}'.")
 
-Header = {
-    "accept": "application/json"
+     # Get the image data from the Image Texture node
+        image = found_node.image
+
+        if image:
+            print(f"Image Name: {image.name}")
+            print(f"Image Filepath: {image.filepath}")
+            print(f"Image Size: {image.size}")  # Returns a tuple of the form (width, height)
+            print(f"Image Alpha: {image.alpha_mode}")
+            print(f"Image Colorspace: {image.colorspace_settings.name}")
+    
+            # Get a reference to the baked image datablock
+            print(image.name)
+    
+            # Convert the image data to a NumPy array
+            width,height=image.size
+            image_pixels=np.array(image.pixels[:]).reshape(height,width,4)
+    
+            # Convert the image data from a NumPy array to an OpenCV Image object
+            origin_image=(image_pixels[:,:,:3]*255).astype(np.uint8)[::-1]# Extract the RGB channels and reverse the row order (OpenCV uses BGR)
+            success, buffer = cv2.imencode('.png', origin_image)
+            b64img = base64.b64encode(buffer).decode("utf-8")
+    
+            print("Image Texture data encoded in Base64:")
+            #print(b64img)
+            return b64img
+        else:
+            print("No image is assigned to the Image Texture node.")
+    else:
+        print(f"An Image Texture node with the label '{target_label}' does not exist in the material.")
+    
+    return b64img
+
+def read_file_image(path):
+    img = cv2.imread(path)
+    success, buffer = cv2.imencode('.png', img)
+    b64img = base64.b64encode(buffer).decode("utf-8")
+    return b64img
+
+#def Create_temp_file():
+
+def render_image():
+    
+    #Set the render settings
+    bpy.context.scene.camera=bpy.data.objects['RenderCamera']
+    bpy.context.scene.render.resolution_percentage=100
+    bpy.context.scene.render.use_stamp_time=True
+    bpy.context.scene.render.use_stamp_date=True
+    bpy.context.scene.render.use_stamp_frame=True
+    bpy.context.scene.render.use_stamp_filename=True
+    
+    #Define the output path and filename prefix
+    output_path = IMAGE_FOLDER
+    timestamp = int(time.time())
+    render_filename_prefix=f"{timestamp}_1.png"
+    
+    #Set the output image settings
+    try:
+        orig_render_file_format = bpy.context.scene.render.image_settings.file_format
+        orig_render_color_mode = bpy.context.scene.render.image_settings.color_mode
+        orig_render_color_depth =bpy.context.scene.render.image_settings.color_depth
+
+        bpy.context.scene.render.image_settings.file_format='PNG'
+        bpy.context.scene.render.image_settings.color_mode='RGBA'
+        bpy.context.scene.render.image_settings.color_depth = '8'
+        
+        bpy.ops.render.render()
+        bpy.data.images['Render Result'].save_render(f"{output_path}/1/{render_filename_prefix}")
+
+        bpy.context.scene.render.image_settings.file_format = orig_render_file_format
+        bpy.context.scene.render.image_settings.color_mode = orig_render_color_mode
+        bpy.context.scene.render.image_settings.color_depth = orig_render_color_depth
+    except:
+        return print("Couldn't save rendered image")
+
+
+def set_params_image(mat,params): 
+    #b64img=read_image(mat)
+    b64_file_img=read_file_image("E:/Master/Graduation_project/sd/stable-diffusion-webui/outputs/img2img-images/2023-02-23/00101-2954456484.png")
+    b64_input_img=read_image(mat)#read_file_image("E:/Master/Graduation_project/Model_utility/Valid/00238-2079211147.png")
+    params["controlnet_input_image"] = [b64_input_img]
+    params["init_images"]=[b64_file_img]
+
+def send_to_Webui_api(mat,params):
+    # create headers
+    Headers = {
+    "Accept": "application/json",
+    "Content-Type": "application/json",
+    "Accept-Encoding":"gzip,deflate,br",
+    "User-Agent":"Blender/"+bpy.app.version_string,
 }
-
-
-def send_to_Webui_api(params, filename_prefix):
+    #prepare server url
+    server_url ="http://localhost:7860/controlnet/img2img"
+    
+    # prepare data for API
+    params = DEFAULT_PARAMS
+    
+    set_params_image(mat,params)
+    
     # send API request to the server
     try:
-        response = requests.get('http://127.0.0.1:7860/user/', headers=Header)
+        response = requests.post(url=server_url, json=params,headers=Headers,timeout=1000)
     except requests.exceptions.ConnectionError:
         return print(f"The Automatic1111 server couldn't be found.")
     except requests.exceptions.MissingSchema:
@@ -161,6 +254,69 @@ def send_to_Webui_api(params, filename_prefix):
 
 # handle the response
     if response.status_code == 200:
-        return handle_api_success(response, filename_prefix)
+        print("successed")
+        return handle_api_success(response, IMAGE_FOLDER)
     else:
+        print("failed")
         return handle_api_error(response)
+
+def handle_api_success(response, filename):
+    
+    try:
+        response_obj = response.json()
+        base64_img=response_obj["images"][0]
+    except:
+        print("Automatic1111 response content: ")
+        print(response.content)
+        return print("Received an unexpected response from the Automatic1111 server.")
+    
+    data=json.loads(response.text)
+    image_data_list=data.get('images',[])
+    num_images=len(image_data_list)
+    print(f"Number of images:{num_images}")
+    
+    #for i in range(num_images):
+        
+    
+    # try:
+    #     output_file=filename
+    # except:
+    #     return print("Couldn't create a temp file to save image.")
+    
+    # #decode base64 image
+    # try:
+    #     img_binary=base64.b64decode(base64_img.replace("data:image/png;base64,",""))
+    # except:
+    #     return print("Couldn't decode base64 image.")
+    
+    # #save the image to the file
+    # try:
+    #     with open(f"{output_file}/_g001.png","wb")as file:
+    #         file.write(img_binary)
+    # except:
+    #     return print("Couldn't write to temp file.")
+    
+    #return the file
+    # return output_file
+
+def handle_api_error(response):
+    if response.status_code == 404:
+        try:
+            response_obj = response.json()
+            if response_obj.get('detail') and response_obj['detail'] == "Not Found":
+                return print("It looks like the Automatic1111 server is running, but it's not in API mode.")
+            elif response_obj.get('detail') and response_obj['detail'] == "Sampler not found":
+                return print("The sampler you selected is not available.")
+            else:
+                return print(f"An error occurred in the Automatic1111 server. Full server response: {json.dumps(response_obj)}")
+        except:
+            return print("It looks like the Automatic1111 server is running, but it's not in API mode.")
+    else:
+        print(response.status_code)
+        print(response.json())
+        return print("An error occurred in the Automatic1111 server.")
+
+
+complete_mat=create_texture()
+bake_texture(complete_mat)
+send_to_Webui_api(complete_mat,DEFAULT_PARAMS)
