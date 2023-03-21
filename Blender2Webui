@@ -10,6 +10,7 @@ import requests
 import json
 import cv2
 import numpy as np
+from io import BytesIO
 from random import uniform
 
 IMAGE_FOLDER = "path/to/image/folder"#F:\\Output
@@ -45,7 +46,7 @@ DEFAULT_PARAMS = {
     "subseed": -1,
     "subseed_strength": -1,
     "sampler_index": "Euler a",
-    "batch_size": 3,
+    "batch_size": 1,
     "n_iter": 1,
     "steps": 25,
     "cfg_scale": 7,
@@ -83,7 +84,6 @@ def create_texture():
     # Create image texture node
     target_label='ReferenceTexture'
     found_image_texture=next((node for node in mat.node_tree.nodes if node.type=='TEX_IMAGE'and node.label==target_label),None)
-    #found_image_texture=any(node.type=='TEX_IMAGE'and node.label==target_label for node in mat.node_tree.nodes)
     if not found_image_texture:
         image_node = mat.node_tree.nodes.new(type='ShaderNodeTexImage')
         image_node.label = 'ReferenceTexture'
@@ -109,7 +109,6 @@ def bake_texture(mat):
     #image_node = mat.node_tree.nodes(lable='Image01')
     color_output = purecolor_node.outputs[0]
     emit_color_input = mat.node_tree.nodes.get("Principled BSDF").inputs.get("Base Color")
-    #emit_color_input = mat.node_tree.nodes.get("Material Output").inputs.get("Surface")
     mat.node_tree.links.new(color_output, emit_color_input)
 
     # Set up bake settings
@@ -137,7 +136,7 @@ def read_image(mat):
     
     # Define the target label
     target_label = 'ReferenceTexture'
-
+    
     # Find the Image Texture node with the target label using a generator expression and next()
     found_node = next((node for node in mat.node_tree.nodes if node.type == 'TEX_IMAGE' and node.label == target_label), None)
     
@@ -146,16 +145,12 @@ def read_image(mat):
 
      # Get the image data from the Image Texture node
         image = found_node.image
-
         if image:
             print(f"Image Name: {image.name}")
             print(f"Image Filepath: {image.filepath}")
             print(f"Image Size: {image.size}")  # Returns a tuple of the form (width, height)
             print(f"Image Alpha: {image.alpha_mode}")
             print(f"Image Colorspace: {image.colorspace_settings.name}")
-    
-            # Get a reference to the baked image datablock
-            print(image.name)
     
             # Convert the image data to a NumPy array
             width,height=image.size
@@ -165,8 +160,7 @@ def read_image(mat):
             origin_image=(image_pixels[:,:,:3]*255).astype(np.uint8)[::-1]# Extract the RGB channels and reverse the row order (OpenCV uses BGR)
             success, buffer = cv2.imencode('.png', origin_image)
             b64img = base64.b64encode(buffer).decode("utf-8")
-    
-            print("Image Texture data encoded in Base64:")
+            #print("Image Texture data encoded in Base64:")
             #print(b64img)
             return b64img
         else:
@@ -184,7 +178,7 @@ def read_file_image(path):
 
 #def Create_temp_file():
 
-def render_image():
+def render_image(time:int,index:int):
     
     #Set the render settings
     bpy.context.scene.camera=bpy.data.objects['RenderCamera']
@@ -196,8 +190,9 @@ def render_image():
     
     #Define the output path and filename prefix
     output_path = IMAGE_FOLDER
-    timestamp = int(time.time())
-    render_filename_prefix=f"{timestamp}_1.png"
+    #timestamp = int(time.time())
+    render_filename_prefix=f"{time}_{index}.png"
+    #render_filename_prefix=f"{timestamp}_{index}.png"
     
     #Set the output image settings
     try:
@@ -210,7 +205,7 @@ def render_image():
         bpy.context.scene.render.image_settings.color_depth = '8'
         
         bpy.ops.render.render()
-        bpy.data.images['Render Result'].save_render(f"{output_path}/1/{render_filename_prefix}")
+        bpy.data.images['Render Result'].save_render(f"{output_path}/Render_Image/{render_filename_prefix}")
 
         bpy.context.scene.render.image_settings.file_format = orig_render_file_format
         bpy.context.scene.render.image_settings.color_mode = orig_render_color_mode
@@ -219,14 +214,14 @@ def render_image():
         return print("Couldn't save rendered image")
 
 
-def set_params_image(mat,params): 
+def set_params_image(mat,params:dict): 
     #b64img=read_image(mat)
     b64_file_img=read_file_image("E:/Master/Graduation_project/sd/stable-diffusion-webui/outputs/img2img-images/2023-02-23/00101-2954456484.png")
     b64_input_img=read_image(mat)#read_file_image("E:/Master/Graduation_project/Model_utility/Valid/00238-2079211147.png")
     params["controlnet_input_image"] = [b64_input_img]
     params["init_images"]=[b64_file_img]
 
-def send_to_Webui_api(mat,params):
+def send_to_Webui_api(mat,params:dict):
     # create headers
     Headers = {
     "Accept": "application/json",
@@ -238,7 +233,7 @@ def send_to_Webui_api(mat,params):
     server_url ="http://localhost:7860/controlnet/img2img"
     
     # prepare data for API
-    params = DEFAULT_PARAMS
+    #params = DEFAULT_PARAMS
     
     set_params_image(mat,params)
     
@@ -260,23 +255,91 @@ def send_to_Webui_api(mat,params):
         print("failed")
         return handle_api_error(response)
 
+def get_render_image(b64_img_data,filename):
+    
+    try:
+        output_file=filename
+    except:
+        return print("Couldn't create a temp file to save image.")
+    
+    #decode base64 image
+    try:
+        img_binary=base64.b64decode(b64_img_data.replace("data:image/png;base64,",""))
+    except:
+        return print("Couldn't decode base64 image.")
+    
+    render_image_name="Decode_Image"
+    timestamp = int(time.time())
+    times=timestamp
+    #save the image to the file
+    try:
+        output_file_prefix=f"{output_file}/Decoded_Image/{render_image_name}_{times}.png"
+        with open(output_file_prefix,"wb")as f:
+            f.write(img_binary)
+            #img = cv2.imread(output_file_prefix)
+    except:
+        return print("Couldn't write to temp file.")
+    
+    img=bpy.data.images.load(output_file_prefix)
+    node_tree= bpy.context.active_object.active_material.node_tree
+
+    #Find or create an Image Texture node
+    target_label='RenderTexture'
+    found_image_texture=next((node for node in node_tree.nodes if node.type=='TEX_IMAGE'and node.label==target_label),None)
+    #found_image_texture=any(node.type=='TEX_IMAGE'and node.label==target_label for node in mat.node_tree.nodes)
+    if not found_image_texture:
+        image_node = node_tree.nodes.new(type='ShaderNodeTexImage')
+        image_node.label = 'RenderTexture'
+        image_node.location = (-300, 300)
+        #image_node.image = render_image
+        image_node.image=img
+    else:
+        print("An Render Image Texture Node already exists in the material.")
+        #found_image_texture.image=render_image
+        found_image_texture.image=img
+        print("A new image has been created and assigned to the existing Image Texture node.")
+    
+    # Connect nodes
+    renderimg_node=found_image_texture
+    img_output=renderimg_node.outputs['Color']
+    
+    principled_node=next((node for node in node_tree.nodes if node.type=='BSDF_PRINCIPLED'),None)
+    
+    if not principled_node:
+        print("Principled BSDF node not found.")
+    else:
+        base_color_socket=principled_node.inputs['Base Color']
+        
+    connected_links=[link for link in node_tree.links if link.from_node==renderimg_node 
+                        and link.from_socket==img_output
+                        and link.to_node==principled_node
+                        and link.to_socket==base_color_socket]
+    
+    if not connected_links:
+        node_tree.links.new(img_output, base_color_socket)
+        print("Connected Image Texture node to Principled BSDF node.")
+    else:
+        print("Image Texture node is already connected to Principled BSDF node.")
+    
+    return times
+
 def handle_api_success(response, filename):
     
     try:
         response_obj = response.json()
-        base64_img=response_obj["images"][0]
+        #base64_img=response_obj["images"][0]
     except:
         print("Automatic1111 response content: ")
         print(response.content)
         return print("Received an unexpected response from the Automatic1111 server.")
     
-    data=json.loads(response.text)
-    image_data_list=data.get('images',[])
-    num_images=len(image_data_list)
-    print(f"Number of images:{num_images}")
+    num_images=check_image_number(response)
     
-    #for i in range(num_images):
-        
+    
+    for i in range(num_images-1):
+        base64_img=response_obj["images"][i]
+        times=get_render_image(base64_img,filename)
+        render_image(times,i)
     
     # try:
     #     output_file=filename
@@ -296,7 +359,7 @@ def handle_api_success(response, filename):
     # except:
     #     return print("Couldn't write to temp file.")
     
-    #return the file
+    # #return the file
     # return output_file
 
 def handle_api_error(response):
@@ -316,6 +379,13 @@ def handle_api_error(response):
         print(response.json())
         return print("An error occurred in the Automatic1111 server.")
 
+def check_image_number(response)->int:
+    #check Number of images
+    data=json.loads(response.text)
+    image_data_list=data.get('images',[])
+    num_images=len(image_data_list)
+    print(f"Number of images:{num_images}")
+    return num_images
 
 complete_mat=create_texture()
 bake_texture(complete_mat)
