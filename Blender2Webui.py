@@ -46,7 +46,7 @@ DEFAULT_PARAMS = {
     "subseed": -1,
     "subseed_strength": -1,
     "sampler_index": "Euler a",
-    "batch_size": 1,
+    "batch_size": 3,
     "n_iter": 1,
     "steps": 25,
     "cfg_scale": 7,
@@ -79,6 +79,7 @@ def create_texture():
         color = (uniform(0, 1), uniform(0, 1), uniform(0, 1), 1.0)
         purecolor_node.outputs[0].default_value = color
     else:
+        found_color.outputs[0].default_value = (uniform(0, 1), uniform(0, 1), uniform(0, 1), 1.0)
         print("An RGB Node already exists in the material.")
     
     # Create image texture node
@@ -102,6 +103,29 @@ def create_texture():
             print("A new image has been created and assigned to the existing Image Texture node.")
     
     return mat
+
+def create_normal_area():
+    # Get the active object
+    obj = bpy.context.active_object
+    if not obj.active_material:
+        print ("No material is assigned to the active object.")
+        return
+        # mat = bpy.data.materials.new(name='New Material')
+        # mat.use_nodes = True
+        # obj.active_material = mat
+    else:
+        mat = obj.active_material
+    
+    # Create normal map
+    target_label='ReferenceTexture'
+    found_image_texture=next((node for node in mat.node_tree.nodes if node.type=='TEX_IMAGE'and node.label==target_label), None)
+    if not found_image_texture:
+        return print("An Image Texture Node with the label 'ReferenceTexture' does not exist in the material.")
+    else:
+        found_image_texture.select=True
+        mat.node_tree.nodes.active=found_image_texture
+        bpy.ops.deepbump.colortonormals()
+        #bpy.ops.deepbump.normalstoheight()
 
 def bake_texture(mat):
     # Connect nodes
@@ -216,7 +240,8 @@ def render_image(time:int,index:int):
 
 def set_params_image(mat,params:dict): 
     #b64img=read_image(mat)
-    b64_file_img=read_file_image("E:/Master/Graduation_project/sd/stable-diffusion-webui/outputs/img2img-images/2023-02-23/00101-2954456484.png")
+    b64_file_img=read_image(mat)
+    #b64_file_img=read_file_image("E:/Master/Graduation_project/sd/stable-diffusion-webui/outputs/img2img-images/2023-02-23/00101-2954456484.png")
     b64_input_img=read_image(mat)#read_file_image("E:/Master/Graduation_project/Model_utility/Valid/00238-2079211147.png")
     params["controlnet_input_image"] = [b64_input_img]
     params["init_images"]=[b64_file_img]
@@ -293,6 +318,7 @@ def get_render_image(b64_img_data,filename):
         image_node.location = (-300, 300)
         #image_node.image = render_image
         image_node.image=img
+        found_image_texture=image_node
     else:
         print("An Render Image Texture Node already exists in the material.")
         #found_image_texture.image=render_image
