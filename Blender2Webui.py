@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 from io import BytesIO
 from random import uniform
+from Input_model import ModelImporter
 
 IMAGE_FOLDER = "path/to/image/folder"#F:\\Output
 
@@ -57,7 +58,11 @@ DEFAULT_PARAMS = {
     "override_settings": {},
     "override_settings_restore_afterwards": True
 }
-    
+
+#file_path = "/path/to/your/model.obj"
+#position = (1, 2, 3)  # X, Y, Z
+#rotation = (0, 0, 0)  # In radians
+#ModelImporter.import_model(file_path, position, rotation)
 
 def create_texture():
     # Get the active object
